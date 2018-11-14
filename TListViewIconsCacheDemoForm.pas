@@ -10,10 +10,11 @@ uses
    Windows,
    ShellAPI,
    Forms,
+   fgl,
    Controls,
    Graphics,
    Dialogs,
-   ComCtrls;
+   ComCtrls, StdCtrls;
 
 type
    TOnIconCacheGetNextEvent = procedure(var AFilename: string) of object;
@@ -38,16 +39,21 @@ type
       property OnReceiveIconStream: TOnIconCacheReceiveIconStreamEvent read FOnReceiveIconStream write FOnReceiveIconStream;
    end;
 
+   TListViewIconCacheMap = TFPGMap<string,integer>;
+
    { TListViewIconsCacheDemoFormMain }
 
    TListViewIconsCacheDemoFormMain = class(TForm)
+     bnRefresh: TButton;
       ilIcons: TImageList;
       lvFiles: TListView;
+      procedure bnRefreshClick(Sender: TObject);
       procedure FormCreate(Sender: TObject);
       procedure FormDestroy(Sender: TObject);
       procedure FormShow(Sender: TObject);
    private
       FPath: string;
+      FIconCacheMap: TListViewIconCacheMap;
       FIconCacheThread: TListViewIconCacheThread;
       procedure DoIconCacheGetNext(var AFilename: string);
       procedure DoIconCacheReceiveIconStream(AFilename: string; AStream: TStream);
@@ -139,8 +145,7 @@ end;
 
 procedure TListViewIconsCacheDemoFormMain.FormShow(Sender: TObject);
 begin
-   // TODO : pick own path; network folders work best to demonstrate since icons load slow
-   ShowFolderContents('t:\people\patrick\');
+   bnRefresh.Click;
 end;
 
 procedure TListViewIconsCacheDemoFormMain.DoIconCacheGetNext(var AFilename: string);
@@ -171,6 +176,7 @@ procedure TListViewIconsCacheDemoFormMain.DoIconCacheReceiveIconStream(AFilename
 var
    li: TListItem;
    i: TIcon;
+   iIndex: integer;
 begin
    li := lvFiles.Items.FindCaption(0, ExtractFileName(AFilename), False, True, False);
    if not Assigned(li) then begin
@@ -179,7 +185,9 @@ begin
    i := TIcon.Create;
    try
       i.LoadFromStream(AStream);
-      li.ImageIndex := ilIcons.AddIcon(i);
+      iIndex := ilIcons.AddIcon(i);
+      li.ImageIndex := iIndex;
+      FIconCacheMap.Add(AFilename, iIndex);
    finally
       i.Free;
    end;
@@ -187,10 +195,17 @@ end;
 
 procedure TListViewIconsCacheDemoFormMain.FormCreate(Sender: TObject);
 begin
+   FIconCacheMap := TListViewIconCacheMap.Create;
    FIconCacheThread := TListViewIconCacheThread.Create(True);
    FIconCacheThread.OnGetNext := DoIconCacheGetNext;
    FIconCacheThread.OnReceiveIconStream := DoIconCacheReceiveIconStream;
    FIconCacheThread.Resume;
+end;
+
+procedure TListViewIconsCacheDemoFormMain.bnRefreshClick(Sender: TObject);
+begin
+   // TODO : pick own path; network folders work best to demonstrate since icons load slow
+   ShowFolderContents('t:\people\patrick\');
 end;
 
 procedure TListViewIconsCacheDemoFormMain.FormDestroy(Sender: TObject);
@@ -198,6 +213,7 @@ begin
    FIconCacheThread.Terminate;
    FIconCacheThread.WaitFor;
    FIconCacheThread.Free;
+   FIconCacheMap.Free;
 end;
 
 procedure TListViewIconsCacheDemoFormMain.ShowFolderContents(AFolder: string);
@@ -205,6 +221,7 @@ var
    sr: TSearchRec;
    i: integer;
    li: TListItem;
+   iIndex: integer;
 begin
    FPath := AFolder;
    AFolder := IncludeTrailingPathDelimiter(AFolder);
@@ -216,8 +233,13 @@ begin
          while i = 0 do begin
             if (sr.Name <> '.') and (sr.Name <> '..') then begin
                li := lvFiles.Items.Add;
-               li.ImageIndex := IconCacheNoIconLoaded;
                li.Caption := sr.Name;
+               iIndex := FIconCacheMap.IndexOf(AFolder + sr.Name);
+               if iIndex > -1 then begin
+                  li.ImageIndex := FIconCacheMap.Data[iIndex];
+               end else begin
+                  li.ImageIndex := IconCacheNoIconLoaded;
+               end;
             end;
             i := FindNext(sr);
          end;
