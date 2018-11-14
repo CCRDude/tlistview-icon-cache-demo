@@ -33,6 +33,7 @@ uses
    FileIconCache;
 
 type
+   TDemoListItem = class(TFileIconListItem);
 
    { TListViewIconsCacheDemoFormMain }
 
@@ -44,6 +45,8 @@ type
       procedure FormCreate(Sender: TObject);
       procedure FormDestroy(Sender: TObject);
       procedure FormShow(Sender: TObject);
+      procedure lvFilesCreateItemClass(Sender: TCustomListView;
+        var ItemClass: TListItemClass);
    private
       FPath: string;
       FFileIconCache: TFileIconCache;
@@ -65,6 +68,12 @@ implementation
 procedure TListViewIconsCacheDemoFormMain.FormShow(Sender: TObject);
 begin
    bnRefresh.Click;
+end;
+
+procedure TListViewIconsCacheDemoFormMain.lvFilesCreateItemClass(
+  Sender: TCustomListView; var ItemClass: TListItemClass);
+begin
+   ItemClass := TDemoListItem;
 end;
 
 procedure TListViewIconsCacheDemoFormMain.DoIconCacheGetNext(var AFilename: string);
@@ -105,9 +114,8 @@ end;
 procedure TListViewIconsCacheDemoFormMain.FormCreate(Sender: TObject);
 begin
    FFileIconCache := TFileIconCache.Create;
-   FFileIconCache.ImageList := ilIcons;
+   FFileIconCache.ListView := lvFiles;
    FFileIconCache.OnGetNext := DoIconCacheGetNext;
-   FFileIconCache.OnReceiveIconIndex := DoIconCacheReceiveIconIndex;
 end;
 
 procedure TListViewIconsCacheDemoFormMain.bnRefreshClick(Sender: TObject);
@@ -125,7 +133,7 @@ procedure TListViewIconsCacheDemoFormMain.ShowFolderContents(AFolder: string);
 var
    sr: TSearchRec;
    i: integer;
-   li: TListItem;
+   li: TFileIconListItem;
    iIndex: integer;
 begin
    FPath := AFolder;
@@ -137,7 +145,8 @@ begin
       try
          while i = 0 do begin
             if (sr.Name <> '.') and (sr.Name <> '..') then begin
-               li := lvFiles.Items.Add;
+               li := TFileIconListItem(lvFiles.Items.Add);
+               li.Filename := AFolder + sr.Name;
                li.Caption := sr.Name;
                li.ImageIndex := FFileIconCache.GetFileIcon(AFolder + sr.Name);
             end;

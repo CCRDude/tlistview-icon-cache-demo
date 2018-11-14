@@ -23,6 +23,7 @@ object ListViewIconsCacheDemoFormMain: TListViewIconsCacheDemoFormMain
     RowSelect = True
     SmallImages = ilIcons
     TabOrder = 0
+    OnCreateItemClass = lvFilesCreateItemClass
   end
   object bnRefresh: TButton
     Left = 4

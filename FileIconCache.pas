@@ -28,6 +28,8 @@ uses
    {$ENDIF MSWindows}
    Graphics,
    Controls,
+   ComCtrls,
+   ImgList,
    {$IFDEF FPC}
    fgl,
    {$ELSE FPC}
@@ -39,6 +41,17 @@ type
    TOnIconCacheGetNextEvent = procedure(var AFilename: string) of object;
    TOnIconCacheReceiveIconStreamEvent = procedure(AFilename: string; AStream: TMemoryStream) of object;
    TOnIconCacheReceiveIconIndexEvent = procedure(AFilename: string; AIconIndex: integer) of object;
+
+   { TFileIconListItem }
+
+   TFileIconListItem = class(TListItem)
+   private
+      FFilename: string;
+   public
+      property Filename: string read FFilename write FFilename;
+   end;
+
+   TFileIconListItemClass = class of TFileIconListItem;
 
    { TListViewIconCacheThread }
 
@@ -72,18 +85,23 @@ type
       FIconCacheMap: TListViewIconCacheMap;
       FIconHashes: TListViewIconHashesMap;
       FIconCacheThread: TListViewIconCacheThread;
-      FImageList: TImageList;
+      FImageList: TCustomImageList;
+      FListView: TListView;
       FOnGetNext: TOnIconCacheGetNextEvent;
       FOnReceiveIconIndex: TOnIconCacheReceiveIconIndexEvent;
+      function FindFileListItem(AFilename: string): TFileIconListItem;
+      procedure SetIconIndex(AFilename: string; AIconIndex: integer);
       procedure DoIconCacheGetNext(var AFilename: string);
       procedure DoIconCacheReceiveIconStream(AFilename: string; AStream: TMemoryStream);
+      procedure SetListView(AValue: TListView);
    public
       constructor Create;
       destructor Destroy; override;
       function GetFileIcon(AFilename: string): integer;
       property OnGetNext: TOnIconCacheGetNextEvent read FOnGetNext write FOnGetNext;
       property OnReceiveIconIndex: TOnIconCacheReceiveIconIndexEvent read FOnReceiveIconIndex write FOnReceiveIconIndex;
-      property ImageList: TImageList read FImageList write FImageList;
+      property ImageList: TCustomImageList read FImageList write FImageList;
+      property ListView: TListView read FListView write SetListView;
    end;
 
 
@@ -100,8 +118,45 @@ uses
 
 { TFileIconCache }
 
+function TFileIconCache.FindFileListItem(AFilename: string): TFileIconListItem;
+var
+   i: integer;
+   c: TListItemClass;
+begin
+   Result := nil;
+   if not Assigned(FListView) then begin
+      Exit;
+   end;
+   if not Assigned(FListView.OnCreateItemClass) then begin
+      Exit;
+   end;
+   for i := 0 to Pred(FListView.Items.Count) do begin
+      if FListView.Items[i] is TFileIconListItem then begin
+      if TFileIconListItem(FListView.Items[i]).Filename = AFilename then begin
+         Result := TFileIconListItem(FListView.Items[i]);
+         Exit;
+      end;
+
+      end;
+   end;
+end;
+
+procedure TFileIconCache.SetIconIndex(AFilename: string; AIconIndex: integer);
+var
+   li: TListItem;
+begin
+   li := FindFileListItem(AFilename);
+   if Assigned(li) then begin
+      li.ImageIndex := AIconIndex;
+   end;
+   if Assigned(FOnReceiveIconIndex) then begin
+      FOnReceiveIconIndex(AFilename, AIconIndex);
+   end;
+end;
+
 procedure TFileIconCache.DoIconCacheGetNext(var AFilename: string);
 begin
+   //if Assigned(FListView) and (FListView.
    AFilename := '';
    if Assigned(FOnGetNext) then begin
       FOnGetNext(AFilename);
@@ -138,8 +193,17 @@ begin
       end;
    end;
    FIconCacheMap.Add(AFilename, iIndex);
-   if Assigned(FOnReceiveIconIndex) then begin
-      FOnReceiveIconIndex(AFilename, iIndex);
+   SetIconIndex(AFilename, iIndex);
+end;
+
+procedure TFileIconCache.SetListView(AValue: TListView);
+begin
+   if FListView = AValue then begin
+      Exit;
+   end;
+   FListView := AValue;
+   if Assigned(FListView.LargeImages) then begin
+      FImageList := FListView.LargeImages;
    end;
 end;
 
@@ -210,6 +274,7 @@ begin
       end;
    end;
 end;
+
 {$ENDIF MSWindows}
 
 procedure TListViewIconCacheThread.SyncSendReceiveIconStream;
