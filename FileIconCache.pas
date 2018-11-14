@@ -31,11 +31,7 @@ uses
    Controls,
    ComCtrls,
    ImgList,
-   {$IFDEF FPC}
-   fgl,
-   {$ELSE FPC}
    Generics.Collections,
-   {$ENDIF FPC}
    SysUtils;
 
 type
@@ -77,8 +73,9 @@ type
       property OnReceiveIconStream: TOnIconCacheReceiveIconStreamEvent read FOnReceiveIconStream write FOnReceiveIconStream;
    end;
 
-   TListViewIconCacheMap = TFPGMap<string, integer>;
-   TListViewIconHashesMap = TFPGMap<string, integer>;
+   TListViewIconCacheMap = TDictionary<string, integer>;
+   TListViewIconHashesMap = TDictionary<string, integer>;
+
 
    { TFileIconCache }
 
@@ -210,9 +207,8 @@ begin
       try
          AStream.Seek(0, soFromBeginning);
          sHash := LowerCase(SHA1Print(SHA1Buffer(AStream.Memory^, AStream.Size)));
-         iHashIndex := FIconHashes.IndexOf(sHash);
-         if iHashIndex > -1 then begin
-            iIndex := FIconHashes.Data[iHashIndex];
+         if FIconHashes.ContainsKey(sHash) then begin
+            iIndex := FIconHashes.GetItem(sHash);
          end else begin
             i.LoadFromStream(AStream);
             iIndex := FImageList.AddIcon(i);
@@ -268,9 +264,8 @@ function TFileIconCache.GetFileIcon(AFilename: string): integer;
 var
    iIndex: integer;
 begin
-   iIndex := FIconCacheMap.IndexOf(AFilename);
-   if iIndex > -1 then begin
-      Result := FIconCacheMap.Data[iIndex];
+   if FIconCacheMap.ContainsKey(AFilename) then begin
+      Result := FIconCacheMap.GetItem(AFilename);
    end else begin
       Result := IconCacheNoIconLoaded;
    end;
@@ -355,7 +350,6 @@ begin
             ExtractIconWindows(sFilename);
             {$IFEND}
          end else begin
-            // it would be better to use a timeout waiting for a "new icons wanted" signal.
             FNewIconsEvent.WaitFor(100);
             FNewIconsEvent.ResetEvent;
          end;
