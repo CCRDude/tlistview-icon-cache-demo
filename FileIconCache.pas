@@ -38,7 +38,7 @@ uses
    SysUtils;
 
 type
-   TOnIconCacheGetNextEvent = procedure(var AFilename: string) of object;
+   TOnIconCacheGetNextEvent = procedure(out AFilename: string) of object;
    TOnIconCacheReceiveIconStreamEvent = procedure(AFilename: string; AStream: TMemoryStream) of object;
    TOnIconCacheReceiveIconIndexEvent = procedure(AFilename: string; AIconIndex: integer) of object;
 
@@ -91,7 +91,7 @@ type
       FOnReceiveIconIndex: TOnIconCacheReceiveIconIndexEvent;
       function FindFileListItem(AFilename: string): TFileIconListItem;
       procedure SetIconIndex(AFilename: string; AIconIndex: integer);
-      procedure DoIconCacheGetNext(var AFilename: string);
+      procedure DoIconCacheGetNext(out AFilename: string);
       procedure DoIconCacheReceiveIconStream(AFilename: string; AStream: TMemoryStream);
       procedure SetListView(AValue: TListView);
    public
@@ -121,7 +121,6 @@ uses
 function TFileIconCache.FindFileListItem(AFilename: string): TFileIconListItem;
 var
    i: integer;
-   c: TListItemClass;
 begin
    Result := nil;
    if not Assigned(FListView) then begin
@@ -132,11 +131,10 @@ begin
    end;
    for i := 0 to Pred(FListView.Items.Count) do begin
       if FListView.Items[i] is TFileIconListItem then begin
-      if TFileIconListItem(FListView.Items[i]).Filename = AFilename then begin
-         Result := TFileIconListItem(FListView.Items[i]);
-         Exit;
-      end;
-
+         if SameText(TFileIconListItem(FListView.Items[i]).Filename, AFilename) then begin
+            Result := TFileIconListItem(FListView.Items[i]);
+            Exit;
+         end;
       end;
    end;
 end;
@@ -154,10 +152,35 @@ begin
    end;
 end;
 
-procedure TFileIconCache.DoIconCacheGetNext(var AFilename: string);
+procedure TFileIconCache.DoIconCacheGetNext(out AFilename: string);
+var
+   c: TListItemClass;
+   liFirst: TListItem;
+   iFirst: integer;
 begin
-   //if Assigned(FListView) and (FListView.
    AFilename := '';
+   if Assigned(FListView) and Assigned(FListView.OnCreateItemClass) then begin
+      if FListView.Items.Count = 0 then begin
+         Exit;
+      end;
+      c := TListItem;
+      FListView.OnCreateItemClass(FListView, c);
+      if c.InheritsFrom(TFileIconListItem) then begin
+         liFirst := FListView.TopItem;
+         if not Assigned(liFirst) then begin
+            liFirst := FListView.Items[0];
+         end;
+         iFirst := liFirst.Index;
+         while (iFirst < FListView.Items.Count) do begin
+            if FListView.Items[iFirst].ImageIndex = IconCacheNoIconLoaded then begin
+               AFilename := TFileIconListItem(FListView.Items[iFirst]).Filename;
+               FListView.Items[iFirst].ImageIndex := IconCacheIconPending;
+               Exit;
+            end;
+            Inc(iFirst);
+         end;
+      end;
+   end;
    if Assigned(FOnGetNext) then begin
       FOnGetNext(AFilename);
    end;
@@ -202,7 +225,7 @@ begin
       Exit;
    end;
    FListView := AValue;
-   if Assigned(FListView.LargeImages) then begin
+   if (Assigned(FListView.LargeImages)) and (not Assigned(FImageList)) then begin
       FImageList := FListView.LargeImages;
    end;
 end;
@@ -214,7 +237,7 @@ begin
    FIconCacheThread := TListViewIconCacheThread.Create(True);
    FIconCacheThread.OnGetNext := DoIconCacheGetNext;
    FIconCacheThread.OnReceiveIconStream := DoIconCacheReceiveIconStream;
-   FIconCacheThread.Resume;
+   FIconCacheThread.Start;
 end;
 
 destructor TFileIconCache.Destroy;

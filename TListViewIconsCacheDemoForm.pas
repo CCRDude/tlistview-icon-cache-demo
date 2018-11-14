@@ -41,17 +41,14 @@ type
       bnRefresh: TButton;
       ilIcons: TImageList;
       lvFiles: TListView;
-      procedure bnRefreshClick(Sender: TObject);
-      procedure FormCreate(Sender: TObject);
-      procedure FormDestroy(Sender: TObject);
-      procedure FormShow(Sender: TObject);
-      procedure lvFilesCreateItemClass(Sender: TCustomListView;
-        var ItemClass: TListItemClass);
+      procedure bnRefreshClick({%H-}Sender: TObject);
+      procedure FormCreate({%H-}Sender: TObject);
+      procedure FormDestroy({%H-}Sender: TObject);
+      procedure FormShow({%H-}Sender: TObject);
+      procedure lvFilesCreateItemClass({%H-}Sender: TCustomListView; var ItemClass: TListItemClass);
    private
       FPath: string;
       FFileIconCache: TFileIconCache;
-      procedure DoIconCacheGetNext(var AFilename: string);
-      procedure DoIconCacheReceiveIconIndex(AFilename: string; AIconIndex: integer);
    public
       procedure ShowFolderContents(AFolder: string);
    end;
@@ -70,52 +67,15 @@ begin
    bnRefresh.Click;
 end;
 
-procedure TListViewIconsCacheDemoFormMain.lvFilesCreateItemClass(
-  Sender: TCustomListView; var ItemClass: TListItemClass);
+procedure TListViewIconsCacheDemoFormMain.lvFilesCreateItemClass(Sender: TCustomListView; var ItemClass: TListItemClass);
 begin
    ItemClass := TDemoListItem;
-end;
-
-procedure TListViewIconsCacheDemoFormMain.DoIconCacheGetNext(var AFilename: string);
-var
-   liFirst: TListItem;
-   iFirst: integer;
-begin
-   AFilename := '';
-   if lvFiles.Items.Count = 0 then begin
-      Exit;
-   end;
-   liFirst := lvFiles.TopItem;
-   if not Assigned(liFirst) then begin
-      liFirst := lvFiles.Items[0];
-   end;
-   iFirst := liFirst.Index;
-   while (iFirst < lvFiles.Items.Count) do begin
-      if lvFiles.Items[iFirst].ImageIndex = IconCacheNoIconLoaded then begin
-         AFilename := FPath + lvFiles.Items[iFirst].Caption;
-         lvFiles.Items[iFirst].ImageIndex := IconCacheIconPending;
-         Exit;
-      end;
-      Inc(iFirst);
-   end;
-end;
-
-procedure TListViewIconsCacheDemoFormMain.DoIconCacheReceiveIconIndex(AFilename: string; AIconIndex: integer);
-var
-   li: TListItem;
-begin
-   li := lvFiles.Items.FindCaption(0, ExtractFileName(AFilename), False, True, False);
-   if not Assigned(li) then begin
-      Exit;
-   end;
-   li.ImageIndex := AIconIndex;
 end;
 
 procedure TListViewIconsCacheDemoFormMain.FormCreate(Sender: TObject);
 begin
    FFileIconCache := TFileIconCache.Create;
    FFileIconCache.ListView := lvFiles;
-   FFileIconCache.OnGetNext := DoIconCacheGetNext;
 end;
 
 procedure TListViewIconsCacheDemoFormMain.bnRefreshClick(Sender: TObject);
@@ -134,7 +94,6 @@ var
    sr: TSearchRec;
    i: integer;
    li: TFileIconListItem;
-   iIndex: integer;
 begin
    FPath := AFolder;
    AFolder := IncludeTrailingPathDelimiter(AFolder);
