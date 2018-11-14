@@ -116,6 +116,7 @@ begin
       end;
    finally
       lvFiles.Items.EndUpdate;
+      FFileIconCache.TriggerNewIcons;
    end;
 end;
 

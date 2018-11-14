@@ -26,6 +26,7 @@ uses
    {$IFDEF MSWindows}
    Windows,
    {$ENDIF MSWindows}
+   SyncObjs,
    Graphics,
    Controls,
    ComCtrls,
@@ -61,6 +62,7 @@ type
       FOnReceiveIconStream: TOnIconCacheReceiveIconStreamEvent;
       FSyncFilename: string;
       FSyncStream: TMemoryStream;
+      FNewIconsEvent: TEvent;
       {$IFDEF MSWindows}
       procedure ExtractIconWindows(const sFilename: string);
       {$ENDIF MSWindows}
@@ -89,6 +91,7 @@ type
       FListView: TListView;
       FOnGetNext: TOnIconCacheGetNextEvent;
       FOnReceiveIconIndex: TOnIconCacheReceiveIconIndexEvent;
+      FNewIconsEvent: TEvent;
       function FindFileListItem(AFilename: string): TFileIconListItem;
       procedure SetIconIndex(AFilename: string; AIconIndex: integer);
       procedure DoIconCacheGetNext(out AFilename: string);
@@ -97,6 +100,7 @@ type
    public
       constructor Create;
       destructor Destroy; override;
+      procedure TriggerNewIcons;
       function GetFileIcon(AFilename: string): integer;
       property OnGetNext: TOnIconCacheGetNextEvent read FOnGetNext write FOnGetNext;
       property OnReceiveIconIndex: TOnIconCacheReceiveIconIndexEvent read FOnReceiveIconIndex write FOnReceiveIconIndex;
@@ -115,6 +119,9 @@ implementation
 uses
    sha1,
    ShellAPI;
+
+const
+  SNewIconsEventName = 'FileIconCache_NewIconsEvent';
 
 { TFileIconCache }
 
@@ -232,6 +239,7 @@ end;
 
 constructor TFileIconCache.Create;
 begin
+   FNewIconsEvent := TEvent.Create(nil, true, false, SNewIconsEventName);
    FIconCacheMap := TListViewIconCacheMap.Create;
    FIconHashes := TListViewIconHashesMap.Create;
    FIconCacheThread := TListViewIconCacheThread.Create(True);
@@ -247,7 +255,13 @@ begin
    FIconCacheThread.Free;
    FIconHashes.Free;
    FIconCacheMap.Free;
+   FNewIconsEvent.Free;
    inherited Destroy;
+end;
+
+procedure TFileIconCache.TriggerNewIcons;
+begin
+   FNewIconsEvent.SetEvent;
 end;
 
 function TFileIconCache.GetFileIcon(AFilename: string): integer;
@@ -331,6 +345,7 @@ var
    sFilename: string;
 begin
    FSyncStream := TMemoryStream.Create;
+   FNewIconsEvent := TEvent.Create(nil, true, false, SNewIconsEventName);
    try
       while not Terminated do begin
          if GetNextFilename(sFilename) then begin
@@ -340,11 +355,14 @@ begin
             ExtractIconWindows(sFilename);
             {$IFEND}
          end else begin
-            Sleep(100);
+            // it would be better to use a timeout waiting for a "new icons wanted" signal.
+            FNewIconsEvent.WaitFor(100);
+            FNewIconsEvent.ResetEvent;
          end;
       end;
    finally
       FSyncStream.Free;
+      FNewIconsEvent.Free;
    end;
 end;
 
