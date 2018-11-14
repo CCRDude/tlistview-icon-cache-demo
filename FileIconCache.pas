@@ -23,11 +23,17 @@ interface
 
 uses
    Classes,
+   {$IFDEF MSWindows}
    Windows,
+   {$ENDIF MSWindows}
    Graphics,
    Controls,
-   SysUtils,
-   fgl;
+   {$IFDEF FPC}
+   fgl,
+   {$ELSE FPC}
+   Generics.Collections,
+   {$ENDIF FPC}
+   SysUtils;
 
 type
    TOnIconCacheGetNextEvent = procedure(var AFilename: string) of object;
@@ -42,6 +48,9 @@ type
       FOnReceiveIconStream: TOnIconCacheReceiveIconStreamEvent;
       FSyncFilename: string;
       FSyncStream: TMemoryStream;
+      {$IFDEF MSWindows}
+      procedure ExtractIconWindows(const sFilename: string);
+      {$ENDIF MSWindows}
       procedure SyncGetNextFilename;
       procedure SyncSendReceiveIconStream;
       function GetNextFilename(out AFilename: string): boolean;
@@ -109,25 +118,28 @@ begin
    if not Assigned(FImageList) then begin
       Exit;
    end;
-   i := TIcon.Create;
-   try
-      AStream.Seek(0, soFromBeginning);
-      sHash := LowerCase(SHA1Print(SHA1Buffer(AStream.Memory^, AStream.Size)));
-      iHashIndex := FIconHashes.IndexOf(sHash);
-      if iHashIndex > -1 then begin
-         iIndex := FIconHashes.Data[iHashIndex];
-         FIconCacheMap.Add(AFilename, iIndex);
-      end else begin
-         i.LoadFromStream(AStream);
-         iIndex := FImageList.AddIcon(i);
-         FIconCacheMap.Add(AFilename, iIndex);
-         FIconHashes.Add(sHash, iIndex);
+   if AStream.Size = 0 then begin
+      iIndex := IconCacheNoIconAvailable;
+   end else begin
+      i := TIcon.Create;
+      try
+         AStream.Seek(0, soFromBeginning);
+         sHash := LowerCase(SHA1Print(SHA1Buffer(AStream.Memory^, AStream.Size)));
+         iHashIndex := FIconHashes.IndexOf(sHash);
+         if iHashIndex > -1 then begin
+            iIndex := FIconHashes.Data[iHashIndex];
+         end else begin
+            i.LoadFromStream(AStream);
+            iIndex := FImageList.AddIcon(i);
+            FIconHashes.Add(sHash, iIndex);
+         end;
+      finally
+         i.Free;
       end;
-      if Assigned(FOnReceiveIconIndex) then begin
-         FOnReceiveIconIndex(AFilename, iIndex);
-      end;
-   finally
-      i.Free;
+   end;
+   FIconCacheMap.Add(AFilename, iIndex);
+   if Assigned(FOnReceiveIconIndex) then begin
+      FOnReceiveIconIndex(AFilename, iIndex);
    end;
 end;
 
@@ -172,6 +184,34 @@ begin
    end;
 end;
 
+{$IFDEF MSWindows}
+procedure TListViewIconCacheThread.ExtractIconWindows(const sFilename: string);
+var
+   iconIndex: DWord;
+   i: TIcon;
+begin
+   iconIndex := 0;
+   try
+      i := TIcon.Create;
+      try
+         i.Transparent := True;
+         i.Handle := ExtractAssociatedIcon(hInstance, PChar(sFilename), @iconIndex);
+         i.SaveToStream(FSyncStream);
+         DestroyIcon(i.Handle);
+         FSyncStream.Seek(0, soFromBeginning);
+         SendReceiveIconStream(sFilename);
+      finally
+         i.Free;
+      end;
+   except
+      on E: Exception do begin
+         FSyncStream.Setsize(0);
+         SendReceiveIconStream(sFilename);
+      end;
+   end;
+end;
+{$ENDIF MSWindows}
+
 procedure TListViewIconCacheThread.SyncSendReceiveIconStream;
 begin
    if Assigned(FOnReceiveIconStream) then begin
@@ -201,8 +241,6 @@ end;
 procedure TListViewIconCacheThread.Execute;
 var
    sFilename: string;
-   i: TIcon;
-   iconIndex: DWord = 0;
 begin
    FSyncStream := TMemoryStream.Create;
    try
@@ -210,17 +248,9 @@ begin
          if GetNextFilename(sFilename) then begin
             OutputDebugString(PChar(sFilename));
             FSyncStream.SetSize(0);
-            i := TIcon.Create;
-            try
-               i.Transparent := True;
-               i.Handle := ExtractAssociatedIcon(hInstance, PChar(sFilename), @iconIndex);
-               i.SaveToStream(FSyncStream);
-               DestroyIcon(i.Handle);
-               FSyncStream.Seek(0, soFromBeginning);
-               SendReceiveIconStream(sFilename);
-            finally
-               i.Free;
-            end;
+            {$IF DEFINED(MSWindows)}
+            ExtractIconWindows(sFilename);
+            {$IFEND}
          end else begin
             Sleep(100);
          end;
