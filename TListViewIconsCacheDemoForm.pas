@@ -1,50 +1,43 @@
+{
+   @author(Patrick Michael Kolla-ten Venne [pk] <patrick@kolla-tenvenne.de>)
+   @abstract(Demonstrates icon loading and caching in a background thread.)
+
+   @preformatted(
+// *****************************************************************************
+// Copyright: © 2018 Patrick Michael Kolla-ten Venne. All rights reserved.
+// *****************************************************************************
+// Changelog (new entries first):
+// ---------------------------------------
+// 2018-11-14  pk  ---  [CCD] Updated unit header.
+// *****************************************************************************
+   )
+}
+
 unit TListViewIconsCacheDemoForm;
 
+{$IFDEF FPC}
 {$mode Delphi}{$H+}
+{$ENDIF FPC}
 
 interface
 
 uses
    Classes,
    SysUtils,
-   Windows,
-   ShellAPI,
    Forms,
-   fgl,
    Controls,
    Graphics,
    Dialogs,
-   ComCtrls, StdCtrls;
+   ComCtrls,
+   StdCtrls,
+   FileIconCache;
 
 type
-   TOnIconCacheGetNextEvent = procedure(var AFilename: string) of object;
-   TOnIconCacheReceiveIconStreamEvent = procedure(AFilename: string; AStream: TStream) of object;
-
-   { TListViewIconCacheThread }
-
-   TListViewIconCacheThread = class(TThread)
-   private
-      FOnGetNext: TOnIconCacheGetNextEvent;
-      FOnReceiveIconStream: TOnIconCacheReceiveIconStreamEvent;
-      FSyncFilename: string;
-      FSyncStream: TMemoryStream;
-      procedure SyncGetNextFilename;
-      procedure SyncSendReceiveIconStream;
-      function GetNextFilename(out AFilename: string): boolean;
-      procedure SendReceiveIconStream(AFilename: string);
-   protected
-      procedure Execute; override;
-   public
-      property OnGetNext: TOnIconCacheGetNextEvent read FOnGetNext write FOnGetNext;
-      property OnReceiveIconStream: TOnIconCacheReceiveIconStreamEvent read FOnReceiveIconStream write FOnReceiveIconStream;
-   end;
-
-   TListViewIconCacheMap = TFPGMap<string,integer>;
 
    { TListViewIconsCacheDemoFormMain }
 
    TListViewIconsCacheDemoFormMain = class(TForm)
-     bnRefresh: TButton;
+      bnRefresh: TButton;
       ilIcons: TImageList;
       lvFiles: TListView;
       procedure bnRefreshClick(Sender: TObject);
@@ -53,10 +46,9 @@ type
       procedure FormShow(Sender: TObject);
    private
       FPath: string;
-      FIconCacheMap: TListViewIconCacheMap;
-      FIconCacheThread: TListViewIconCacheThread;
+      FFileIconCache: TFileIconCache;
       procedure DoIconCacheGetNext(var AFilename: string);
-      procedure DoIconCacheReceiveIconStream(AFilename: string; AStream: TStream);
+      procedure DoIconCacheReceiveIconIndex(AFilename: string; AIconIndex: integer);
    public
       procedure ShowFolderContents(AFolder: string);
    end;
@@ -67,79 +59,6 @@ var
 implementation
 
 {$R *.lfm}
-
-const
-   IconCacheNoIconLoaded = 0;
-   IconCacheNoIconAvailable = -1;
-   IconCacheIconPending = -2;
-
-{ TListViewIconCacheThread }
-
-procedure TListViewIconCacheThread.SyncGetNextFilename;
-begin
-   if Assigned(FOnGetNext) then begin
-      FOnGetNext(FSyncFilename);
-   end;
-end;
-
-procedure TListViewIconCacheThread.SyncSendReceiveIconStream;
-begin
-   if Assigned(FOnReceiveIconStream) then begin
-      FOnReceiveIconStream(FSyncFilename, FSyncStream);
-   end;
-end;
-
-function TListViewIconCacheThread.GetNextFilename(out AFilename: string): boolean;
-begin
-   Result := Assigned(FOnGetNext);
-   if Result then begin
-      FSyncFilename := '';
-      Synchronize(SyncGetNextFilename);
-      AFilename := FSyncFilename;
-      Result := Length(AFilename) > 0;
-   end;
-end;
-
-procedure TListViewIconCacheThread.SendReceiveIconStream(AFilename: string);
-begin
-   FSyncFilename := AFilename;
-   if Assigned(FOnReceiveIconStream) then begin
-      Synchronize(SyncSendReceiveIconStream);
-   end;
-end;
-
-procedure TListViewIconCacheThread.Execute;
-var
-   sFilename: string;
-   i: TIcon;
-   iconIndex: DWord = 0;
-begin
-   FSyncStream := TMemoryStream.Create;
-   try
-      while not Terminated do begin
-         if GetNextFilename(sFilename) then begin
-            OutputDebugString(PChar(sFilename));
-            FSyncStream.SetSize(0);
-            i := TIcon.Create;
-            try
-               i.Transparent := True;
-               i.Handle := ExtractAssociatedIcon(hInstance, PChar(sFilename), @iconIndex);
-               i.SaveToStream(FSyncStream);
-               DestroyIcon(i.Handle);
-               FSyncStream.Seek(0, soFromBeginning);
-               //FSyncStream.SaveToFile(sFilename + '.ico');
-               SendReceiveIconStream(sFilename);
-            finally
-               i.Free;
-            end;
-         end else begin
-            Sleep(100);
-         end;
-      end;
-   finally
-      FSyncStream.Free;
-   end;
-end;
 
 { TListViewIconsCacheDemoFormMain }
 
@@ -172,34 +91,23 @@ begin
    end;
 end;
 
-procedure TListViewIconsCacheDemoFormMain.DoIconCacheReceiveIconStream(AFilename: string; AStream: TStream);
+procedure TListViewIconsCacheDemoFormMain.DoIconCacheReceiveIconIndex(AFilename: string; AIconIndex: integer);
 var
    li: TListItem;
-   i: TIcon;
-   iIndex: integer;
 begin
    li := lvFiles.Items.FindCaption(0, ExtractFileName(AFilename), False, True, False);
    if not Assigned(li) then begin
       Exit;
    end;
-   i := TIcon.Create;
-   try
-      i.LoadFromStream(AStream);
-      iIndex := ilIcons.AddIcon(i);
-      li.ImageIndex := iIndex;
-      FIconCacheMap.Add(AFilename, iIndex);
-   finally
-      i.Free;
-   end;
+   li.ImageIndex := AIconIndex;
 end;
 
 procedure TListViewIconsCacheDemoFormMain.FormCreate(Sender: TObject);
 begin
-   FIconCacheMap := TListViewIconCacheMap.Create;
-   FIconCacheThread := TListViewIconCacheThread.Create(True);
-   FIconCacheThread.OnGetNext := DoIconCacheGetNext;
-   FIconCacheThread.OnReceiveIconStream := DoIconCacheReceiveIconStream;
-   FIconCacheThread.Resume;
+   FFileIconCache := TFileIconCache.Create;
+   FFileIconCache.ImageList := ilIcons;
+   FFileIconCache.OnGetNext := DoIconCacheGetNext;
+   FFileIconCache.OnReceiveIconIndex := DoIconCacheReceiveIconIndex;
 end;
 
 procedure TListViewIconsCacheDemoFormMain.bnRefreshClick(Sender: TObject);
@@ -210,10 +118,7 @@ end;
 
 procedure TListViewIconsCacheDemoFormMain.FormDestroy(Sender: TObject);
 begin
-   FIconCacheThread.Terminate;
-   FIconCacheThread.WaitFor;
-   FIconCacheThread.Free;
-   FIconCacheMap.Free;
+   FFileIconCache.Free;
 end;
 
 procedure TListViewIconsCacheDemoFormMain.ShowFolderContents(AFolder: string);
@@ -234,12 +139,7 @@ begin
             if (sr.Name <> '.') and (sr.Name <> '..') then begin
                li := lvFiles.Items.Add;
                li.Caption := sr.Name;
-               iIndex := FIconCacheMap.IndexOf(AFolder + sr.Name);
-               if iIndex > -1 then begin
-                  li.ImageIndex := FIconCacheMap.Data[iIndex];
-               end else begin
-                  li.ImageIndex := IconCacheNoIconLoaded;
-               end;
+               li.ImageIndex := FFileIconCache.GetFileIcon(AFolder + sr.Name);
             end;
             i := FindNext(sr);
          end;
